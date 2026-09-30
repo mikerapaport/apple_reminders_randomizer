@@ -26,9 +26,10 @@ _SCRIPT = r'''on run
   tell application "Reminders"
     repeat with reminderList in lists
       set listTitle to name of reminderList
-      repeat with reminderItem in (every reminder of reminderList whose completed is false)
-        -- Fetch the properties in one Apple Event rather than one request per field.
-        set reminderProperties to properties of reminderItem
+      -- Bulk-fetch property records for open reminders in this list. AppleScript's
+      -- every-object property form returns a list of values in one Apple Event.
+      set reminderPropertiesList to properties of (every reminder of reminderList whose completed is false)
+      repeat with reminderProperties in reminderPropertiesList
         set itemTitle to name of reminderProperties
         set itemNotes to ""
         try
