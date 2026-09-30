@@ -1,4 +1,6 @@
 """Create a readable PDF snapshot of reminders using ReportLab."""
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
