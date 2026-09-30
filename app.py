@@ -9,7 +9,7 @@ from dataclasses import asdict
 
 try:
     import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
+    from tkinter import filedialog, messagebox
 except ModuleNotFoundError as exc:
     if exc.name == "_tkinter":
         print(
@@ -38,42 +38,72 @@ class ReminderRandomizer:
         self.root.configure(bg=BG)
         self.reminders: list[Reminder] = []
         self.current: Reminder | None = None
+        self.generate_after_load = False
+        self.loading = False
         self.include_completed = tk.BooleanVar(value=False)
-        self.status = tk.StringVar(value="Connect to Reminders to get started.")
+        self.status = tk.StringVar(value="Click Generate Task to load your reminders and choose one.")
         self._build()
 
     def _build(self):
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TFrame", background=BG)
-        style.configure("TLabel", background=BG, foreground=INK, font=("Helvetica Neue", 12))
-        style.configure("Muted.TLabel", foreground=MUTED, font=("Helvetica Neue", 10))
-        style.configure("Title.TLabel", font=("Helvetica Neue", 25, "bold"), foreground=INK)
-        style.configure("TCheckbutton", background=BG, foreground=INK)
-        outer = ttk.Frame(self.root, padding=28)
+        outer = tk.Frame(self.root, bg=BG, padx=28, pady=24)
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="Random Reminders", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="Pick one open task from your Apple Reminders.", style="Muted.TLabel").pack(anchor="w", pady=(5, 18))
-        toolbar = ttk.Frame(outer)
-        toolbar.pack(fill="x", pady=(0, 18))
-        ttk.Button(toolbar, text="Load from Reminders", command=self.load).pack(side="left")
-        ttk.Button(toolbar, text="Export PDF", command=self.save_pdf).pack(side="left", padx=8)
-        ttk.Button(toolbar, text="Save JSON", command=self.save_json).pack(side="left")
-        ttk.Checkbutton(toolbar, text="Include completed", variable=self.include_completed).pack(side="right")
-        self.card = tk.Frame(outer, bg="white", highlightbackground="#dfe3e8", highlightthickness=1, padx=24, pady=24)
-        self.card.pack(fill="both", expand=True)
-        self.count = tk.StringVar(value="No reminders loaded")
-        tk.Label(self.card, textvariable=self.count, bg="white", fg=MUTED, font=("Helvetica Neue", 10)).pack(anchor="w")
-        self.title = tk.Label(self.card, text="Ready when you are", bg="white", fg=INK, font=("Helvetica Neue", 23, "bold"), wraplength=590, justify="left", anchor="w")
-        self.title.pack(fill="x", pady=(25, 8))
-        self.meta = tk.Label(self.card, text="", bg="white", fg=ACCENT, font=("Helvetica Neue", 11), justify="left", anchor="w")
-        self.meta.pack(fill="x")
-        self.notes = tk.Label(self.card, text="Load your reminders, then draw a task at random.", bg="white", fg=MUTED, font=("Helvetica Neue", 12), wraplength=590, justify="left", anchor="nw")
-        self.notes.pack(fill="both", expand=True, pady=(20, 5))
-        ttk.Button(outer, text="Pick a random task", command=self.pick).pack(fill="x", ipady=8, pady=(18, 10))
-        ttk.Label(outer, textvariable=self.status, style="Muted.TLabel").pack(anchor="w")
 
-    def load(self):
+        tk.Label(outer, text="Random Reminders", bg=BG, fg=INK,
+                 font=("Helvetica Neue", 25, "bold")).pack(anchor="w")
+        tk.Label(outer, text="Get one task from your Apple Reminders.", bg=BG, fg=MUTED,
+                 font=("Helvetica Neue", 11)).pack(anchor="w", pady=(5, 16))
+
+        toolbar = tk.Frame(outer, bg=BG)
+        toolbar.pack(fill="x", pady=(0, 12))
+        tk.Button(toolbar, text="Load / Refresh Reminders", command=self.load,
+                  padx=10, pady=5).pack(side="left")
+        tk.Button(toolbar, text="Export PDF", command=self.save_pdf,
+                  padx=10, pady=5).pack(side="left", padx=(8, 0))
+        tk.Button(toolbar, text="Save JSON", command=self.save_json,
+                  padx=10, pady=5).pack(side="left", padx=(8, 0))
+        tk.Checkbutton(toolbar, text="Include completed", variable=self.include_completed,
+                       bg=BG, fg=INK, activebackground=BG).pack(side="right")
+
+        self.count = tk.StringVar(value="No reminders loaded")
+        tk.Label(outer, textvariable=self.count, bg=BG, fg=MUTED,
+                 font=("Helvetica Neue", 10)).pack(anchor="w", pady=(0, 8))
+
+        self.card = tk.Frame(outer, bg="white", highlightbackground="#dfe3e8",
+                             highlightthickness=1, padx=22, pady=20)
+        self.card.pack(fill="both", expand=True)
+        self.title = tk.Label(self.card, text="Ready when you are", bg="white", fg=INK,
+                              font=("Helvetica Neue", 22, "bold"), wraplength=590,
+                              justify="left", anchor="w")
+        self.title.pack(fill="x", anchor="w")
+        self.source = tk.Label(self.card, text="Source list: —", bg="white", fg=ACCENT,
+                               font=("Helvetica Neue", 12, "bold"), anchor="w")
+        self.source.pack(fill="x", pady=(9, 13))
+        tk.Frame(self.card, bg="#e5e9f0", height=1).pack(fill="x", pady=(0, 12))
+        self.details = tk.Text(self.card, height=10, wrap="word", bg="white", fg=INK,
+                               font=("Helvetica Neue", 11), relief="flat", borderwidth=0,
+                               padx=0, pady=0, state="disabled", takefocus=False)
+        self.details.pack(fill="both", expand=True)
+        self._show_details("Click Generate Task to load reminders and display a random task here.")
+
+        tk.Button(outer, text="Generate Task", command=self.generate_task,
+                  bg=ACCENT, fg="white", activebackground="#3451c6", activeforeground="white",
+                  font=("Helvetica Neue", 14, "bold"), relief="flat", padx=12, pady=11,
+                  cursor="pointinghand").pack(fill="x", pady=(14, 9))
+        tk.Label(outer, textvariable=self.status, bg=BG, fg=MUTED,
+                 font=("Helvetica Neue", 10), anchor="w").pack(fill="x")
+
+    def _show_details(self, text: str):
+        self.details.configure(state="normal")
+        self.details.delete("1.0", "end")
+        self.details.insert("1.0", text)
+        self.details.configure(state="disabled")
+
+    def load(self, generate_when_ready=False):
+        if self.loading:
+            self.generate_after_load = self.generate_after_load or generate_when_ready
+            return
+        self.loading = True
+        self.generate_after_load = generate_when_ready
         self.status.set("Reading reminders…")
         threading.Thread(target=self._load_background, daemon=True).start()
 
@@ -82,25 +112,40 @@ class ReminderRandomizer:
             data = fetch_reminders()
             self.root.after(0, lambda: self._loaded(data))
         except RemindersAccessError as exc:
-            self.root.after(0, lambda: self._load_failed(str(exc)))
+            self.root.after(0, lambda detail=str(exc): self._load_failed(detail))
+        except Exception as exc:
+            detail = f"Unexpected error while reading Reminders: {exc}"
+            self.root.after(0, lambda detail=detail: self._load_failed(detail))
 
     def _loaded(self, data):
+        self.loading = False
         self.reminders = data
         self.current = None
         open_count = sum(not r.completed for r in data)
         self.count.set(f"{len(data)} reminders · {open_count} open")
         self.status.set("Reminders loaded. Choose your filters and draw a task.")
         self.title.configure(text="Ready when you are")
-        self.meta.configure(text="")
-        self.notes.configure(text="Your tasks and reminder details are ready.")
+        self.source.configure(text="Source list: —")
+        self._show_details("Reminder data loaded. Click Generate Task to choose one.")
+        if self.generate_after_load:
+            self.generate_after_load = False
+            self.pick()
 
     def _load_failed(self, detail):
+        self.loading = False
+        self.generate_after_load = False
         self.status.set("Could not load reminders.")
         messagebox.showerror("Can't read Reminders", detail, parent=self.root)
 
     def _eligible(self):
         pool = self.reminders if self.include_completed.get() else [r for r in self.reminders if not r.completed]
         return [r for r in pool if r.title.strip()]
+
+    def generate_task(self):
+        if not self.reminders:
+            self.load(generate_when_ready=True)
+            return
+        self.pick()
 
     def pick(self):
         pool = self._eligible()
@@ -110,14 +155,22 @@ class ReminderRandomizer:
         self.current = random.choice(pool)
         item = self.current
         self.title.configure(text=item.title)
-        details = [item.list_name]
-        if item.due_date: details.append(f"Due {item.due_date}")
-        if item.flagged: details.append("Flagged")
-        if item.priority: details.append(f"Priority {item.priority}")
-        if item.tags: details.append("Tags: " + ", ".join(item.tags))
-        if item.completed: details.append("Completed")
-        self.meta.configure(text="  ·  ".join(details))
-        self.notes.configure(text=item.notes or "No notes for this reminder.")
+        self.source.configure(text=f"Source list: {item.list_name or 'Unspecified'}")
+        priority_names = {0: "None", 1: "Low", 5: "Medium", 9: "High"}
+        rows = [
+            ("Notes", item.notes or "None"),
+            ("Due", item.due_date or "Not set"),
+            ("Status", "Completed" if item.completed else "Open"),
+            ("Flagged", "Yes" if item.flagged else "No"),
+            ("Priority", priority_names.get(item.priority, str(item.priority))),
+            ("Tags", ", ".join(item.tags) if item.tags else "None available"),
+            ("Attachments", "Not exposed by Reminders AppleScript"),
+            ("Created", item.creation_date or "Not available"),
+            ("Modified", item.modification_date or "Not available"),
+            ("Completed on", item.completion_date or "Not applicable"),
+            ("Reminder ID", item.identifier or "Not available"),
+        ]
+        self._show_details("\n\n".join(f"{label}\n{value}" for label, value in rows))
         self.status.set(f"Picked from {len(pool)} eligible reminder{'s' if len(pool) != 1 else ''}.")
 
     def save_pdf(self):

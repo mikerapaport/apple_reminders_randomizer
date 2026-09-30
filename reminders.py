@@ -28,7 +28,10 @@ _SCRIPT = r'''on run
       set listTitle to name of reminderList
       repeat with reminderItem in (every reminder of reminderList)
         set itemTitle to name of reminderItem
-        set itemNotes to body of reminderItem
+        set itemNotes to ""
+        try
+          set itemNotes to body of reminderItem
+        end try
         set itemId to id of reminderItem
         set itemDone to completed of reminderItem
         set itemFlagged to flagged of reminderItem
@@ -38,16 +41,16 @@ _SCRIPT = r'''on run
         set itemModified to ""
         set itemCompletedAt to ""
         try
-          set itemDue to (due date of reminderItem) as «class isot»
+          set itemDue to due date of reminderItem
         end try
         try
-          set itemCreated to (creation date of reminderItem) as «class isot»
+          set itemCreated to creation date of reminderItem
         end try
         try
-          set itemModified to (modification date of reminderItem) as «class isot»
+          set itemModified to modification date of reminderItem
         end try
         try
-          set itemCompletedAt to (completion date of reminderItem) as «class isot»
+          set itemCompletedAt to completion date of reminderItem
         end try
         if not isFirst then set outputText to outputText & ","
         set isFirst to false
