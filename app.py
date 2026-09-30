@@ -4,6 +4,7 @@ import json
 import random
 import threading
 import sys
+import time
 from pathlib import Path
 from dataclasses import asdict
 
@@ -28,6 +29,11 @@ BG = "#f4f6f8"
 INK = "#172b4d"
 MUTED = "#5e6c84"
 ACCENT = "#4263eb"
+DEBUG = True
+
+def debug_log(message: str) -> None:
+    if DEBUG:
+        print(f"[DEBUG] {message}", flush=True)
 
 class ReminderRandomizer:
     def __init__(self, root: tk.Tk):
@@ -40,9 +46,9 @@ class ReminderRandomizer:
         self.current: Reminder | None = None
         self.generate_after_load = False
         self.loading = False
-        self.include_completed = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="Click Generate Task to load your reminders and choose one.")
         self._build()
+        debug_log("application started")
 
     def _build(self):
         outer = tk.Frame(self.root, bg=BG, padx=28, pady=24)
@@ -61,9 +67,6 @@ class ReminderRandomizer:
                   padx=10, pady=5).pack(side="left", padx=(8, 0))
         tk.Button(toolbar, text="Save JSON", command=self.save_json,
                   padx=10, pady=5).pack(side="left", padx=(8, 0))
-        tk.Checkbutton(toolbar, text="Include completed", variable=self.include_completed,
-                       bg=BG, fg=INK, activebackground=BG).pack(side="right")
-
         self.count = tk.StringVar(value="No reminders loaded")
         tk.Label(outer, textvariable=self.count, bg=BG, fg=MUTED,
                  font=("Helvetica Neue", 10)).pack(anchor="w", pady=(0, 8))
@@ -104,26 +107,38 @@ class ReminderRandomizer:
             return
         self.loading = True
         self.generate_after_load = generate_when_ready
+        self.title.configure(text="Loading open reminders…")
+        self.source.configure(text="Source list: loading from Apple Reminders")
+        self._show_details("Reading active reminders. Completed reminders are skipped.")
         self.status.set("Reading reminders…")
+        self.root.update_idletasks()
+        debug_log("now loading open reminders")
         threading.Thread(target=self._load_background, daemon=True).start()
 
     def _load_background(self):
+        started = time.perf_counter()
         try:
             data = fetch_reminders()
+            debug_log(f"Reminders responded in {time.perf_counter() - started:.1f}s")
+            debug_log(f"loaded {len(data)} open reminders; titles follow")
+            for reminder in data:
+                debug_log(f"reminder title: {reminder.title}")
             self.root.after(0, lambda: self._loaded(data))
         except RemindersAccessError as exc:
+            debug_log(f"reminder load failed: {exc}")
             self.root.after(0, lambda detail=str(exc): self._load_failed(detail))
         except Exception as exc:
             detail = f"Unexpected error while reading Reminders: {exc}"
+            debug_log(f"{detail}")
             self.root.after(0, lambda detail=detail: self._load_failed(detail))
 
     def _loaded(self, data):
         self.loading = False
         self.reminders = data
         self.current = None
-        open_count = sum(not r.completed for r in data)
-        self.count.set(f"{len(data)} reminders · {open_count} open")
-        self.status.set("Reminders loaded. Choose your filters and draw a task.")
+        self.count.set(f"{len(data)} active reminders loaded")
+        self.status.set("Active reminders loaded. Click Generate Task.")
+        debug_log(f"reminder load completed; {len(data)} active reminders available")
         self.title.configure(text="Ready when you are")
         self.source.configure(text="Source list: —")
         self._show_details("Reminder data loaded. Click Generate Task to choose one.")
@@ -137,30 +152,30 @@ class ReminderRandomizer:
         self.status.set("Could not load reminders.")
         messagebox.showerror("Can't read Reminders", detail, parent=self.root)
 
-    def _eligible(self):
-        pool = self.reminders if self.include_completed.get() else [r for r in self.reminders if not r.completed]
-        return [r for r in pool if r.title.strip()]
-
     def generate_task(self):
+        debug_log("generate task requested")
         if not self.reminders:
             self.load(generate_when_ready=True)
             return
         self.pick()
 
     def pick(self):
-        pool = self._eligible()
+        debug_log("now choosing a reminder")
+        pool = [r for r in self.reminders if not r.completed and r.title.strip()]
         if not pool:
+            debug_log("no active reminders are available to choose")
             messagebox.showinfo("No tasks available", "Load reminders, or include completed reminders, to choose a task.", parent=self.root)
             return
         self.current = random.choice(pool)
         item = self.current
+        debug_log(f"chosen reminder title: {item.title}")
         self.title.configure(text=item.title)
         self.source.configure(text=f"Source list: {item.list_name or 'Unspecified'}")
         priority_names = {0: "None", 1: "Low", 5: "Medium", 9: "High"}
         rows = [
             ("Notes", item.notes or "None"),
             ("Due", item.due_date or "Not set"),
-            ("Status", "Completed" if item.completed else "Open"),
+            ("Status", "Open"),
             ("Flagged", "Yes" if item.flagged else "No"),
             ("Priority", priority_names.get(item.priority, str(item.priority))),
             ("Tags", ", ".join(item.tags) if item.tags else "None available"),
@@ -180,9 +195,12 @@ class ReminderRandomizer:
         path = filedialog.asksaveasfilename(parent=self.root, title="Export reminders as PDF", defaultextension=".pdf", filetypes=[("PDF document", "*.pdf")], initialfile="Apple Reminders.pdf")
         if not path: return
         try:
+            debug_log("starting PDF export")
             export_pdf(self.reminders, path)
             self.status.set(f"PDF exported to {Path(path).name}")
+            debug_log("PDF export completed")
         except Exception as exc:
+            debug_log(f"PDF export failed: {exc}")
             messagebox.showerror("PDF export failed", str(exc), parent=self.root)
 
     def save_json(self):
@@ -191,8 +209,14 @@ class ReminderRandomizer:
             return
         path = filedialog.asksaveasfilename(parent=self.root, title="Save reminder data", defaultextension=".json", filetypes=[("JSON file", "*.json")], initialfile="Apple Reminders.json")
         if not path: return
-        Path(path).write_text(json.dumps([asdict(r) for r in self.reminders], ensure_ascii=False, indent=2), encoding="utf-8")
-        self.status.set(f"JSON saved to {Path(path).name}")
+        try:
+            debug_log("starting JSON export")
+            Path(path).write_text(json.dumps([asdict(r) for r in self.reminders], ensure_ascii=False, indent=2), encoding="utf-8")
+            self.status.set(f"JSON saved to {Path(path).name}")
+            debug_log("JSON export completed")
+        except OSError as exc:
+            debug_log(f"JSON export failed: {exc}")
+            messagebox.showerror("JSON export failed", str(exc), parent=self.root)
 
 def main():
     root = tk.Tk()

@@ -26,31 +26,33 @@ _SCRIPT = r'''on run
   tell application "Reminders"
     repeat with reminderList in lists
       set listTitle to name of reminderList
-      repeat with reminderItem in (every reminder of reminderList)
-        set itemTitle to name of reminderItem
+      repeat with reminderItem in (every reminder of reminderList whose completed is false)
+        -- Fetch the properties in one Apple Event rather than one request per field.
+        set reminderProperties to properties of reminderItem
+        set itemTitle to name of reminderProperties
         set itemNotes to ""
         try
-          set itemNotes to body of reminderItem
+          set itemNotes to body of reminderProperties
         end try
-        set itemId to id of reminderItem
-        set itemDone to completed of reminderItem
-        set itemFlagged to flagged of reminderItem
-        set itemPriority to priority of reminderItem
+        set itemId to id of reminderProperties
+        set itemDone to completed of reminderProperties
+        set itemFlagged to flagged of reminderProperties
+        set itemPriority to priority of reminderProperties
         set itemDue to ""
         set itemCreated to ""
         set itemModified to ""
         set itemCompletedAt to ""
         try
-          set itemDue to due date of reminderItem
+          set itemDue to due date of reminderProperties
         end try
         try
-          set itemCreated to creation date of reminderItem
+          set itemCreated to creation date of reminderProperties
         end try
         try
-          set itemModified to modification date of reminderItem
+          set itemModified to modification date of reminderProperties
         end try
         try
-          set itemCompletedAt to completion date of reminderItem
+          set itemCompletedAt to completion date of reminderProperties
         end try
         if not isFirst then set outputText to outputText & ","
         set isFirst to false

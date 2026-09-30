@@ -29,7 +29,7 @@ A small Python desktop app that reads reminders from the macOS Reminders app, ke
 
 ## Reminder data
 
-The app reads title, notes, list, due date, completion state/date, flagged state, priority, creation/modification dates, and the Reminders identifier. It includes completed tasks in the loaded data, but excludes them from random picks unless **Include completed** is enabled.
+The app reads only active, incomplete reminders. It reads title, notes, list, due date, flagged state, priority, creation/modification dates, and the Reminders identifier. Debug logging is on by default; it prints action messages and reminder titles to the Terminal, never notes or other reminder metadata. Set `DEBUG = False` near the top of `app.py` to turn it off.
 
 AppleScript's Reminders dictionary does not expose every newer Reminders feature consistently. In particular, tags and subtasks are not currently read by this version; tags are retained as an empty field. PDF is an output snapshot, not an import format. The JSON export retains all fields this version can read.
 
