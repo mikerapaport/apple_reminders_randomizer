@@ -123,7 +123,7 @@ class RemindersAccessError(RuntimeError):
     pass
 
 def fetch_reminders(on_title_loaded=None, on_batch_loaded=None) -> list[Reminder]:
-    """Return reminders, including completed items, from all Reminders lists."""
+    """Return active, incomplete reminders and stream progress callbacks."""
     try:
         with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as output_file:
             process = subprocess.Popen(

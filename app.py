@@ -25,10 +25,13 @@ except ModuleNotFoundError as exc:
 from reminders import Reminder, RemindersAccessError, fetch_reminders
 from pdf_export import export_pdf
 
-BG = "#f4f6f8"
-INK = "#172b4d"
-MUTED = "#5e6c84"
-ACCENT = "#4263eb"
+BG = "#202124"
+PANEL = "#292b30"
+INK = "#f5f7fa"
+MUTED = "#c2c7d0"
+ACCENT = "#75a7ff"
+ACTION = "#356fd2"
+PROGRESS_TRACK = "#4b505a"
 DEBUG = True
 
 def debug_log(message: str) -> None:
@@ -39,8 +42,8 @@ class ReminderRandomizer:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Random Reminders")
-        self.root.geometry("720x600")
-        self.root.minsize(560, 480)
+        self.root.geometry("900x700")
+        self.root.minsize(680, 520)
         self.root.configure(bg=BG)
         self.reminders: list[Reminder] = []
         self.current: Reminder | None = None
@@ -52,62 +55,94 @@ class ReminderRandomizer:
         debug_log("application started")
 
     def _build(self):
-        outer = tk.Frame(self.root, bg=BG, padx=28, pady=24)
-        outer.pack(fill="both", expand=True)
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        outer = tk.Frame(self.root, bg=BG, padx=24, pady=20)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(4, weight=1)
 
         tk.Label(outer, text="Random Reminders", bg=BG, fg=INK,
-                 font=("Helvetica Neue", 25, "bold")).pack(anchor="w")
-        tk.Label(outer, text="Get one task from your Apple Reminders.", bg=BG, fg=MUTED,
-                 font=("Helvetica Neue", 11)).pack(anchor="w", pady=(5, 16))
-
+                 font=("Helvetica Neue", 25, "bold"), anchor="w").grid(
+                     row=0, column=0, sticky="ew")
         toolbar = tk.Frame(outer, bg=BG)
-        toolbar.pack(fill="x", pady=(0, 12))
-        tk.Button(toolbar, text="Load / Refresh Reminders", command=self.load,
-                  padx=10, pady=5).pack(side="left")
-        tk.Button(toolbar, text="Export PDF", command=self.save_pdf,
-                  padx=10, pady=5).pack(side="left", padx=(8, 0))
-        tk.Button(toolbar, text="Save JSON", command=self.save_json,
-                  padx=10, pady=5).pack(side="left", padx=(8, 0))
-        self.count = tk.StringVar(value="No reminders loaded")
+        self.toolbar = toolbar
+        toolbar.grid(row=1, column=0, sticky="ew", pady=(12, 10))
+        self.load_button = tk.Button(toolbar, text="Load / Refresh Reminders", command=self.load,
+                                     padx=10, pady=5)
+        self.load_button.pack(side="left")
+        self.pdf_button = tk.Button(toolbar, text="Export PDF", command=self.save_pdf,
+                                    padx=10, pady=5)
+        self.pdf_button.pack(side="left", padx=(8, 0))
+        self.json_button = tk.Button(toolbar, text="Save JSON", command=self.save_json,
+                                     padx=10, pady=5)
+        self.json_button.pack(side="left", padx=(8, 0))
+
+        self.count = tk.StringVar(value="Starting automatic load…")
         tk.Label(outer, textvariable=self.count, bg=BG, fg=MUTED,
-                 font=("Helvetica Neue", 10)).pack(anchor="w", pady=(0, 8))
+                 font=("Helvetica Neue", 10), anchor="w").grid(
+                     row=2, column=0, sticky="ew", pady=(0, 5))
+
         self.progress_running = False
         self.progress_position = 0
-
-        self.card = tk.Frame(outer, bg="white", highlightbackground="#dfe3e8",
-                             highlightthickness=1, padx=22, pady=20)
-        self.card.pack(fill="both", expand=True)
-        self.progress_canvas = tk.Canvas(self.card, height=16, bg="white",
+        self.progress_canvas = tk.Canvas(outer, height=4, bg=BG,
                                          highlightthickness=0, borderwidth=0)
-        self.title = tk.Label(self.card, text="Ready when you are", bg="white", fg=INK,
-                              font=("Helvetica Neue", 22, "bold"), wraplength=590,
-                              justify="left", anchor="w")
-        self.title.pack(fill="x", anchor="w")
-        self.source = tk.Label(self.card, text="Source list: —", bg="white", fg=ACCENT,
-                               font=("Helvetica Neue", 12, "bold"), anchor="w")
-        self.source.pack(fill="x", pady=(9, 13))
-        tk.Frame(self.card, bg="#e5e9f0", height=1).pack(fill="x", pady=(0, 12))
-        self.details = tk.Text(self.card, height=10, wrap="word", bg="white", fg=INK,
-                               font=("Helvetica Neue", 11), relief="flat", borderwidth=0,
-                               padx=0, pady=0, state="disabled", takefocus=False)
-        self.details.pack(fill="both", expand=True)
-        self._show_details("Loading your active reminders automatically…")
+        self.progress_canvas.grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
-        tk.Button(outer, text="Generate Task", command=self.generate_task,
-                  bg=ACCENT, fg="white", activebackground="#3451c6", activeforeground="white",
-                  font=("Helvetica Neue", 14, "bold"), relief="flat", padx=12, pady=11,
-                  cursor="pointinghand").pack(fill="x", pady=(14, 9))
+        display = tk.Frame(outer, bg=PANEL, highlightbackground="#4b505a",
+                           highlightthickness=1)
+        display.grid(row=4, column=0, sticky="nsew")
+        display.grid_rowconfigure(0, weight=1)
+        display.grid_columnconfigure(0, weight=1)
+        self.details = tk.Text(display, wrap="word", bg=PANEL, fg=INK,
+                               insertbackground=INK, selectbackground="#456da9",
+                               font=("Helvetica Neue", 12), relief="flat", borderwidth=0,
+                               padx=22, pady=18, insertwidth=0, cursor="arrow", takefocus=False)
+        self.details.grid(row=0, column=0, sticky="nsew")
+        self.details.bind("<Key>", lambda _event: "break")
+        self.details.bind("<<Paste>>", lambda _event: "break")
+        self.details.bind("<<Cut>>", lambda _event: "break")
+        scrollbar = tk.Scrollbar(display, orient="vertical", command=self.details.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.details.configure(yscrollcommand=scrollbar.set)
+        self.details.tag_configure("task_title", font=("Helvetica Neue", 22, "bold"), foreground=INK)
+        self.details.tag_configure("source", font=("Helvetica Neue", 13, "bold"), foreground=ACCENT)
+        self._show_details("Loading active reminders automatically…\n\nCompleted reminders are skipped.")
+
+        self.generate_button = tk.Button(outer, text="Generate Task", command=self.generate_task,
+                                         bg=ACTION, fg="white", activebackground="#285ba8",
+                                         activeforeground="white", font=("Helvetica Neue", 14, "bold"),
+                                         relief="flat", padx=12, pady=11, cursor="pointinghand")
+        self.generate_button.grid(row=5, column=0, sticky="ew", pady=(12, 7))
         tk.Label(outer, textvariable=self.status, bg=BG, fg=MUTED,
-                 font=("Helvetica Neue", 10), anchor="w").pack(fill="x")
+                 font=("Helvetica Neue", 10), anchor="w").grid(
+                     row=6, column=0, sticky="ew")
+        self._set_actions_visible(False)
 
     def _show_details(self, text: str):
-        self.details.configure(state="normal")
         self.details.delete("1.0", "end")
         self.details.insert("1.0", text)
-        self.details.configure(state="disabled")
+        self.details.yview_moveto(0)
+
+    def _set_actions_visible(self, loaded: bool, failed: bool = False):
+        if loaded:
+            self.toolbar.grid()
+            self.generate_button.grid()
+            self.load_button.configure(state="normal")
+            self.pdf_button.configure(state="normal")
+            self.json_button.configure(state="normal")
+        elif failed:
+            self.toolbar.grid()
+            self.generate_button.grid_remove()
+            self.load_button.configure(state="normal")
+            self.pdf_button.configure(state="disabled")
+            self.json_button.configure(state="disabled")
+        else:
+            self.toolbar.grid_remove()
+            self.generate_button.grid_remove()
 
     def _start_progress(self):
-        self.progress_canvas.pack(fill="x", before=self.source, pady=(0, 12))
+        self.progress_canvas.configure(height=18, bg=PROGRESS_TRACK)
         self.progress_running = True
         self.progress_position = 0
         self.progress_canvas.update_idletasks()
@@ -121,7 +156,7 @@ class ReminderRandomizer:
         height = max(12, self.progress_canvas.winfo_height())
         chunk = max(60, width // 3)
         self.progress_canvas.create_rectangle(0, 0, width, height,
-                                              fill="#e4e8ef", outline="", tags="progress")
+                                              fill=PROGRESS_TRACK, outline="", tags="progress")
         left = self.progress_position % max(1, width + chunk) - chunk
         self.progress_canvas.create_rectangle(max(0, left), 0,
                                               min(width, left + chunk), height,
@@ -131,7 +166,8 @@ class ReminderRandomizer:
 
     def _stop_progress(self):
         self.progress_running = False
-        self.progress_canvas.pack_forget()
+        self.progress_canvas.delete("progress")
+        self.progress_canvas.configure(height=4, bg=BG)
 
     def load(self, generate_when_ready=False):
         if self.loading:
@@ -140,8 +176,8 @@ class ReminderRandomizer:
         self.loading = True
         self.generate_after_load = generate_when_ready
         self.loaded_so_far = 0
-        self.title.configure(text="Loading open reminders…")
-        self.source.configure(text="Source list: loading from Apple Reminders")
+        self._set_actions_visible(False)
+        self.count.set("Loading active reminders… 0 read")
         self._show_details("Reading active reminders. Completed reminders are skipped.")
         self.status.set("Reading reminders…")
         self._start_progress()
@@ -169,14 +205,19 @@ class ReminderRandomizer:
 
     def _on_batch_loaded(self, list_name: str, count: int):
         debug_log(f"loaded batch: {count} active reminder(s) from list {list_name}")
+        self.root.after(0, lambda: self._show_loading_batch(list_name, count))
+
+    def _show_loading_batch(self, list_name: str, count: int):
+        self._show_details(f"Loading active reminders…\n\nNow reading {count} reminders from “{list_name}”.")
 
     def _on_title_loaded(self, title: str):
         debug_log(f"loaded reminder title: {title}")
-        self.root.after(0, self._increment_loaded_count)
+        self.root.after(0, lambda title=title: self._increment_loaded_count(title))
 
-    def _increment_loaded_count(self):
+    def _increment_loaded_count(self, title: str):
         self.loaded_so_far += 1
         self.count.set(f"Loading active reminders… {self.loaded_so_far} read")
+        self._show_details(f"Loading active reminders…\n\nRecently loaded: {title}")
 
     def _loaded(self, data):
         self.loading = False
@@ -185,9 +226,8 @@ class ReminderRandomizer:
         self.current = None
         self.count.set(f"{len(data)} active reminders loaded")
         self.status.set("Active reminders loaded. Click Generate Task.")
+        self._set_actions_visible(True)
         debug_log(f"reminder load completed; {len(data)} active reminders available")
-        self.title.configure(text="Ready when you are")
-        self.source.configure(text="Source list: —")
         self._show_details("Reminder data loaded. Click Generate Task to choose one.")
         if self.generate_after_load:
             self.generate_after_load = False
@@ -197,7 +237,10 @@ class ReminderRandomizer:
         self.loading = False
         self._stop_progress()
         self.generate_after_load = False
+        self.count.set("Reminder load failed")
+        self._show_details(f"Could not load reminders.\n\n{detail}")
         self.status.set("Could not load reminders.")
+        self._set_actions_visible(False, failed=True)
         messagebox.showerror("Can't read Reminders", detail, parent=self.root)
 
     def generate_task(self):
@@ -212,13 +255,11 @@ class ReminderRandomizer:
         pool = [r for r in self.reminders if not r.completed and r.title.strip()]
         if not pool:
             debug_log("no active reminders are available to choose")
-            messagebox.showinfo("No tasks available", "Load reminders, or include completed reminders, to choose a task.", parent=self.root)
+            messagebox.showinfo("No tasks available", "No active reminders are loaded. Refresh Reminders and try again.", parent=self.root)
             return
         self.current = random.choice(pool)
         item = self.current
         debug_log(f"chosen reminder title: {item.title} | source list: {item.list_name}")
-        self.title.configure(text=item.title)
-        self.source.configure(text=f"Source list: {item.list_name or 'Unspecified'}")
         priority_names = {0: "None", 1: "Low", 5: "Medium", 9: "High"}
         rows = [
             ("Notes", item.notes or "None"),
@@ -233,7 +274,11 @@ class ReminderRandomizer:
             ("Completed on", item.completion_date or "Not applicable"),
             ("Reminder ID", item.identifier or "Not available"),
         ]
-        self._show_details("\n\n".join(f"{label}\n{value}" for label, value in rows))
+        self.details.delete("1.0", "end")
+        self.details.insert("end", item.title + "\n", "task_title")
+        self.details.insert("end", f"Source list: {item.list_name or 'Unspecified'}\n\n", "source")
+        self.details.insert("end", "\n\n".join(f"{label}\n{value}" for label, value in rows))
+        self.details.yview_moveto(0)
         self.status.set(f"Picked from {item.list_name} · {len(pool)} eligible reminder{'s' if len(pool) != 1 else ''}.")
         self.root.update_idletasks()
 
