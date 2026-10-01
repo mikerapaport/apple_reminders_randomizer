@@ -4,28 +4,20 @@ A small Python desktop app that reads reminders from the macOS Reminders app, ke
 
 ## Run
 
-1. Install Python 3.10 or newer and open Terminal in this folder. Tkinter must be included with that Python. For Homebrew Python 3.9, install its Tkinter package first:
-
-   ```sh
-   brew install python-tk@3.9
-   ```
-
-   If Homebrew reports that Python 3.9 needs an upgrade, run `brew upgrade python@3.9` and use the resulting Homebrew `python3` to launch the app.
-
-2. Create a virtual environment and install the PDF dependency:
+1. Use Python 3.9 or newer on macOS 12 or newer, then open Terminal in this folder. This app uses PySide6 (Qt) for its desktop UI, not Tkinter.
+2. Create a virtual environment and install the app dependencies:
 
    ```sh
    python3 -m venv .venv
    source .venv/bin/activate
    python3 -m pip install -r requirements.txt
    ```
-3. Confirm Tkinter is available, then start the app:
+3. Start the app. It automatically begins loading active reminders:
 
    ```sh
-   python3 -c 'import tkinter; print(tkinter.TkVersion)'
    python3 app.py
    ```
-4. Click **Load from Reminders**. macOS may ask you to allow access to Reminders. If permission was denied, change it in **System Settings → Privacy & Security → Reminders**.
+   macOS may ask you to allow access to Reminders. If permission was denied, change it in **System Settings → Privacy & Security → Reminders**.
 
 ## Reminder data
 

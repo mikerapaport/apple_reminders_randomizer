@@ -122,7 +122,7 @@ end quoteJSON
 class RemindersAccessError(RuntimeError):
     pass
 
-def fetch_reminders(on_title_loaded=None, on_batch_loaded=None) -> list[Reminder]:
+def fetch_reminders(on_title_loaded=None, on_batch_loaded=None, should_cancel=None) -> list[Reminder]:
     """Return active, incomplete reminders and stream progress callbacks."""
     try:
         with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as output_file:
@@ -171,6 +171,11 @@ def fetch_reminders(on_title_loaded=None, on_batch_loaded=None) -> list[Reminder
                     process.wait()
                     reader.join(timeout=1)
                     raise RemindersAccessError("Reminders took too long to respond after 120 seconds. Try again.")
+                if process.poll() is None and should_cancel and should_cancel():
+                    process.kill()
+                    process.wait()
+                    reader.join(timeout=1)
+                    raise RemindersAccessError("Reminder loading was cancelled.")
             return_code = process.wait()
             reader.join(timeout=1)
             output_file.seek(0)
