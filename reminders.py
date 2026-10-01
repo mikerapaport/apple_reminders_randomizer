@@ -25,36 +25,21 @@ _SCRIPT = r'''on run
   set isFirst to true
   tell application "Reminders"
     repeat with reminderList in lists
-      set listTitle to name of reminderList
+      set listTitle to my safeString(name of reminderList)
       -- Bulk-fetch property records for open reminders in this list. AppleScript's
       -- every-object property form returns a list of values in one Apple Event.
       set reminderPropertiesList to properties of (every reminder of reminderList whose completed is false)
       repeat with reminderProperties in reminderPropertiesList
-        set itemTitle to name of reminderProperties
-        set itemNotes to ""
-        try
-          set itemNotes to body of reminderProperties
-        end try
-        set itemId to id of reminderProperties
-        set itemDone to completed of reminderProperties
-        set itemFlagged to flagged of reminderProperties
-        set itemPriority to priority of reminderProperties
-        set itemDue to ""
-        set itemCreated to ""
-        set itemModified to ""
-        set itemCompletedAt to ""
-        try
-          set itemDue to due date of reminderProperties
-        end try
-        try
-          set itemCreated to creation date of reminderProperties
-        end try
-        try
-          set itemModified to modification date of reminderProperties
-        end try
-        try
-          set itemCompletedAt to completion date of reminderProperties
-        end try
+        set itemTitle to my safeString(name of reminderProperties)
+        set itemNotes to my safeString(body of reminderProperties)
+        set itemId to my safeString(id of reminderProperties)
+        set itemDone to my safeString(completed of reminderProperties)
+        set itemFlagged to my safeString(flagged of reminderProperties)
+        set itemPriority to my safeString(priority of reminderProperties)
+        set itemDue to my safeString(due date of reminderProperties)
+        set itemCreated to my safeString(creation date of reminderProperties)
+        set itemModified to my safeString(modification date of reminderProperties)
+        set itemCompletedAt to my safeString(completion date of reminderProperties)
         if not isFirst then set outputText to outputText & ","
         set isFirst to false
         set outputText to outputText & "{" & ¬
@@ -62,9 +47,9 @@ _SCRIPT = r'''on run
           "\"notes\":" & my quoteJSON(itemNotes) & "," & ¬
           "\"list_name\":" & my quoteJSON(listTitle) & "," & ¬
           "\"due_date\":" & my quoteJSON(itemDue) & "," & ¬
-          "\"flagged\":" & (itemFlagged as string) & "," & ¬
-          "\"completed\":" & (itemDone as string) & "," & ¬
-          "\"priority\":" & (itemPriority as string) & "," & ¬
+          "\"flagged\":" & my quoteJSON(itemFlagged) & "," & ¬
+          "\"completed\":" & my quoteJSON(itemDone) & "," & ¬
+          "\"priority\":" & my quoteJSON(itemPriority) & "," & ¬
           "\"creation_date\":" & my quoteJSON(itemCreated) & "," & ¬
           "\"modification_date\":" & my quoteJSON(itemModified) & "," & ¬
           "\"completion_date\":" & my quoteJSON(itemCompletedAt) & "," & ¬
@@ -75,6 +60,20 @@ _SCRIPT = r'''on run
   end tell
   return outputText & "]"
 end run
+
+on safeString(valueToConvert)
+  if valueToConvert is missing value then return ""
+  try
+    return valueToConvert as text
+  on error
+    try
+      set dateValue to valueToConvert as date
+      return dateValue as text
+    on error
+      return ""
+    end try
+  end try
+end safeString
 
 on quoteJSON(valueText)
   if valueText is missing value then set valueText to ""
@@ -94,6 +93,10 @@ on quoteJSON(valueText)
   set AppleScript's text item delimiters to linefeed
   set pieces to text items of valueText
   set AppleScript's text item delimiters to "\\n"
+  set valueText to pieces as text
+  set AppleScript's text item delimiters to tab
+  set pieces to text items of valueText
+  set AppleScript's text item delimiters to "\\t"
   set valueText to pieces as text
   set AppleScript's text item delimiters to ""
   return "\"" & valueText & "\""
@@ -119,15 +122,38 @@ def fetch_reminders() -> list[Reminder]:
     try:
         records = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise RemindersAccessError("Reminders returned data the app could not read.") from exc
-    return [Reminder(
-        title=row.get("title", ""), notes=row.get("notes", "") or "",
-        list_name=row.get("list_name", ""), due_date=row.get("due_date", "") or "",
-        flagged=row.get("flagged") is True, completed=row.get("completed") is True,
-        priority=int(row.get("priority") or 0), creation_date=row.get("creation_date", "") or "",
-        modification_date=row.get("modification_date", "") or "",
-        completion_date=row.get("completion_date", "") or "", tags=tuple(row.get("tags") or ()),
-        identifier=row.get("identifier", "")) for row in records]
+        raise RemindersAccessError(
+            f"Reminders returned invalid JSON at line {exc.lineno}, column {exc.colno}. "
+            "The raw reminder contents were not printed because they may contain private notes."
+        ) from exc
+    if not isinstance(records, list):
+        raise RemindersAccessError("Reminders returned data in an unexpected format (expected a list).")
+
+    def as_bool(value):
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"true", "yes", "1"}
+
+    def as_int(value):
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    reminders = []
+    for index, row in enumerate(records, start=1):
+        if not isinstance(row, dict):
+            raise RemindersAccessError(f"Reminder record {index} was not a text property record.")
+        reminders.append(Reminder(
+            title=str(row.get("title", "") or ""), notes=str(row.get("notes", "") or ""),
+            list_name=str(row.get("list_name", "") or ""), due_date=str(row.get("due_date", "") or ""),
+            flagged=as_bool(row.get("flagged")), completed=as_bool(row.get("completed")),
+            priority=as_int(row.get("priority")), creation_date=str(row.get("creation_date", "") or ""),
+            modification_date=str(row.get("modification_date", "") or ""),
+            completion_date=str(row.get("completion_date", "") or ""),
+            tags=tuple(str(tag) for tag in (row.get("tags") or ())),
+            identifier=str(row.get("identifier", "") or "")))
+    return reminders
 
 def reminder_as_dict(reminder: Reminder) -> dict:
     return asdict(reminder)

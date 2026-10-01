@@ -46,7 +46,7 @@ class ReminderRandomizer:
         self.current: Reminder | None = None
         self.generate_after_load = False
         self.loading = False
-        self.status = tk.StringVar(value="Click Generate Task to load your reminders and choose one.")
+        self.status = tk.StringVar(value="Preparing to load open reminders…")
         self._build()
         debug_log("application started")
 
@@ -70,6 +70,11 @@ class ReminderRandomizer:
         self.count = tk.StringVar(value="No reminders loaded")
         tk.Label(outer, textvariable=self.count, bg=BG, fg=MUTED,
                  font=("Helvetica Neue", 10)).pack(anchor="w", pady=(0, 8))
+        self.progress_canvas = tk.Canvas(outer, height=8, bg="#e4e8ef",
+                                         highlightthickness=0, borderwidth=0)
+        self.progress_running = False
+        self.progress_position = 0
+        self.progress_direction = 1
 
         self.card = tk.Frame(outer, bg="white", highlightbackground="#dfe3e8",
                              highlightthickness=1, padx=22, pady=20)
@@ -86,7 +91,7 @@ class ReminderRandomizer:
                                font=("Helvetica Neue", 11), relief="flat", borderwidth=0,
                                padx=0, pady=0, state="disabled", takefocus=False)
         self.details.pack(fill="both", expand=True)
-        self._show_details("Click Generate Task to load reminders and display a random task here.")
+        self._show_details("Loading your active reminders automatically…")
 
         tk.Button(outer, text="Generate Task", command=self.generate_task,
                   bg=ACCENT, fg="white", activebackground="#3451c6", activeforeground="white",
@@ -101,6 +106,35 @@ class ReminderRandomizer:
         self.details.insert("1.0", text)
         self.details.configure(state="disabled")
 
+    def _start_progress(self):
+        self.progress_canvas.pack(fill="x", before=self.card, pady=(0, 10))
+        self.progress_running = True
+        self.progress_position = 0
+        self.progress_direction = 1
+        self._animate_progress()
+
+    def _animate_progress(self):
+        if not self.progress_running:
+            return
+        width = self.progress_canvas.winfo_width()
+        self.progress_canvas.delete("progress")
+        chunk = max(50, width // 4)
+        left = self.progress_position
+        self.progress_canvas.create_rectangle(left, 0, min(width, left + chunk), 8,
+                                              fill=ACCENT, outline="", tags="progress")
+        self.progress_position += 12 * self.progress_direction
+        if self.progress_position >= max(0, width - chunk):
+            self.progress_position = max(0, width - chunk)
+            self.progress_direction = -1
+        elif self.progress_position <= 0:
+            self.progress_position = 0
+            self.progress_direction = 1
+        self.root.after(25, self._animate_progress)
+
+    def _stop_progress(self):
+        self.progress_running = False
+        self.progress_canvas.pack_forget()
+
     def load(self, generate_when_ready=False):
         if self.loading:
             self.generate_after_load = self.generate_after_load or generate_when_ready
@@ -111,6 +145,7 @@ class ReminderRandomizer:
         self.source.configure(text="Source list: loading from Apple Reminders")
         self._show_details("Reading active reminders. Completed reminders are skipped.")
         self.status.set("Reading reminders…")
+        self._start_progress()
         self.root.update_idletasks()
         debug_log("now loading open reminders")
         threading.Thread(target=self._load_background, daemon=True).start()
@@ -134,6 +169,7 @@ class ReminderRandomizer:
 
     def _loaded(self, data):
         self.loading = False
+        self._stop_progress()
         self.reminders = data
         self.current = None
         self.count.set(f"{len(data)} active reminders loaded")
@@ -148,6 +184,7 @@ class ReminderRandomizer:
 
     def _load_failed(self, detail):
         self.loading = False
+        self._stop_progress()
         self.generate_after_load = False
         self.status.set("Could not load reminders.")
         messagebox.showerror("Can't read Reminders", detail, parent=self.root)
@@ -220,7 +257,8 @@ class ReminderRandomizer:
 
 def main():
     root = tk.Tk()
-    ReminderRandomizer(root)
+    app = ReminderRandomizer(root)
+    root.after(150, app.load)
     root.mainloop()
 
 if __name__ == "__main__":
