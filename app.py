@@ -46,6 +46,7 @@ class ReminderRandomizer:
         self.current: Reminder | None = None
         self.generate_after_load = False
         self.loading = False
+        self.loaded_so_far = 0
         self.status = tk.StringVar(value="Preparing to load open reminders…")
         self._build()
         debug_log("application started")
@@ -70,15 +71,14 @@ class ReminderRandomizer:
         self.count = tk.StringVar(value="No reminders loaded")
         tk.Label(outer, textvariable=self.count, bg=BG, fg=MUTED,
                  font=("Helvetica Neue", 10)).pack(anchor="w", pady=(0, 8))
-        self.progress_canvas = tk.Canvas(outer, height=8, bg="#e4e8ef",
-                                         highlightthickness=0, borderwidth=0)
         self.progress_running = False
         self.progress_position = 0
-        self.progress_direction = 1
 
         self.card = tk.Frame(outer, bg="white", highlightbackground="#dfe3e8",
                              highlightthickness=1, padx=22, pady=20)
         self.card.pack(fill="both", expand=True)
+        self.progress_canvas = tk.Canvas(self.card, height=16, bg="white",
+                                         highlightthickness=0, borderwidth=0)
         self.title = tk.Label(self.card, text="Ready when you are", bg="white", fg=INK,
                               font=("Helvetica Neue", 22, "bold"), wraplength=590,
                               justify="left", anchor="w")
@@ -107,10 +107,10 @@ class ReminderRandomizer:
         self.details.configure(state="disabled")
 
     def _start_progress(self):
-        self.progress_canvas.pack(fill="x", before=self.card, pady=(0, 10))
+        self.progress_canvas.pack(fill="x", before=self.source, pady=(0, 12))
         self.progress_running = True
         self.progress_position = 0
-        self.progress_direction = 1
+        self.progress_canvas.update_idletasks()
         self._animate_progress()
 
     def _animate_progress(self):
@@ -118,18 +118,16 @@ class ReminderRandomizer:
             return
         width = self.progress_canvas.winfo_width()
         self.progress_canvas.delete("progress")
-        chunk = max(50, width // 4)
-        left = self.progress_position
-        self.progress_canvas.create_rectangle(left, 0, min(width, left + chunk), 8,
+        height = max(12, self.progress_canvas.winfo_height())
+        chunk = max(60, width // 3)
+        self.progress_canvas.create_rectangle(0, 0, width, height,
+                                              fill="#e4e8ef", outline="", tags="progress")
+        left = self.progress_position % max(1, width + chunk) - chunk
+        self.progress_canvas.create_rectangle(max(0, left), 0,
+                                              min(width, left + chunk), height,
                                               fill=ACCENT, outline="", tags="progress")
-        self.progress_position += 12 * self.progress_direction
-        if self.progress_position >= max(0, width - chunk):
-            self.progress_position = max(0, width - chunk)
-            self.progress_direction = -1
-        elif self.progress_position <= 0:
-            self.progress_position = 0
-            self.progress_direction = 1
-        self.root.after(25, self._animate_progress)
+        self.progress_position += 14
+        self.root.after(30, self._animate_progress)
 
     def _stop_progress(self):
         self.progress_running = False
@@ -141,6 +139,7 @@ class ReminderRandomizer:
             return
         self.loading = True
         self.generate_after_load = generate_when_ready
+        self.loaded_so_far = 0
         self.title.configure(text="Loading open reminders…")
         self.source.configure(text="Source list: loading from Apple Reminders")
         self._show_details("Reading active reminders. Completed reminders are skipped.")
@@ -153,11 +152,12 @@ class ReminderRandomizer:
     def _load_background(self):
         started = time.perf_counter()
         try:
-            data = fetch_reminders()
+            data = fetch_reminders(
+                on_title_loaded=self._on_title_loaded,
+                on_batch_loaded=self._on_batch_loaded,
+            )
             debug_log(f"Reminders responded in {time.perf_counter() - started:.1f}s")
-            debug_log(f"loaded {len(data)} open reminders; titles follow")
-            for reminder in data:
-                debug_log(f"reminder title: {reminder.title}")
+            debug_log(f"loaded {len(data)} open reminders")
             self.root.after(0, lambda: self._loaded(data))
         except RemindersAccessError as exc:
             debug_log(f"reminder load failed: {exc}")
@@ -166,6 +166,17 @@ class ReminderRandomizer:
             detail = f"Unexpected error while reading Reminders: {exc}"
             debug_log(f"{detail}")
             self.root.after(0, lambda detail=detail: self._load_failed(detail))
+
+    def _on_batch_loaded(self, list_name: str, count: int):
+        debug_log(f"loaded batch: {count} active reminder(s) from list {list_name}")
+
+    def _on_title_loaded(self, title: str):
+        debug_log(f"loaded reminder title: {title}")
+        self.root.after(0, self._increment_loaded_count)
+
+    def _increment_loaded_count(self):
+        self.loaded_so_far += 1
+        self.count.set(f"Loading active reminders… {self.loaded_so_far} read")
 
     def _loaded(self, data):
         self.loading = False
@@ -205,7 +216,7 @@ class ReminderRandomizer:
             return
         self.current = random.choice(pool)
         item = self.current
-        debug_log(f"chosen reminder title: {item.title}")
+        debug_log(f"chosen reminder title: {item.title} | source list: {item.list_name}")
         self.title.configure(text=item.title)
         self.source.configure(text=f"Source list: {item.list_name or 'Unspecified'}")
         priority_names = {0: "None", 1: "Low", 5: "Medium", 9: "High"}
@@ -223,7 +234,8 @@ class ReminderRandomizer:
             ("Reminder ID", item.identifier or "Not available"),
         ]
         self._show_details("\n\n".join(f"{label}\n{value}" for label, value in rows))
-        self.status.set(f"Picked from {len(pool)} eligible reminder{'s' if len(pool) != 1 else ''}.")
+        self.status.set(f"Picked from {item.list_name} · {len(pool)} eligible reminder{'s' if len(pool) != 1 else ''}.")
+        self.root.update_idletasks()
 
     def save_pdf(self):
         if not self.reminders:
